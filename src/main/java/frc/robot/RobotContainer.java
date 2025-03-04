@@ -1,63 +1,210 @@
-// Copyright (c) FIRST and other WPILib contributors.
-// Open Source Software; you can modify and/or share it under the terms of
-// the WPILib BSD license file in the root directory of this project.
-
 package frc.robot;
 
-import frc.robot.Constants.OperatorConstants;
-import frc.robot.commands.Autos;
-import frc.robot.commands.ExampleCommand;
-import frc.robot.subsystems.ExampleSubsystem;
 import edu.wpi.first.wpilibj2.command.Command;
+import edu.wpi.first.wpilibj.smartdashboard.SmartDashboard;
+import edu.wpi.first.util.sendable.Sendable;
+import edu.wpi.first.util.sendable.SendableBuilder;
 import edu.wpi.first.wpilibj2.command.button.CommandXboxController;
-import edu.wpi.first.wpilibj2.command.button.Trigger;
+import frc.robot.subsystems.AlgaeIntakeSubsystem;
+import frc.robot.commands.GoToL3Tag;
+import frc.robot.commands.LEDAnimationCommand;
+import frc.robot.commands.LEDCommand;
+import frc.robot.subsystems.AlgaeArmSubsystem;
+import frc.robot.subsystems.CoralArmSubsystem;
+import frc.robot.subsystems.CoralIntakeSubsystem;
+import frc.robot.subsystems.LedSubsystem;
+import frc.robot.subsystems.SwerveSubsystem;
+import frc.robot.subsystems.VisionSubsystem;
+import frc.robot.subsystems.CoralIntakeSubsystem.IntakeMode;
+import edu.wpi.first.wpilibj2.command.ParallelCommandGroup;
+import edu.wpi.first.wpilibj2.command.ParallelDeadlineGroup;
 
-/**
- * This class is where the bulk of the robot should be declared. Since Command-based is a
- * "declarative" paradigm, very little robot logic should actually be handled in the {@link Robot}
- * periodic methods (other than the scheduler calls). Instead, the structure of the robot (including
- * subsystems, commands, and trigger mappings) should be declared here.
- */
-public class RobotContainer {
-  // The robot's subsystems and commands are defined here...
-  private final ExampleSubsystem m_exampleSubsystem = new ExampleSubsystem();
+public class RobotContainer implements Sendable {
 
-  // Replace with CommandPS4Controller or CommandJoystick if needed
-  private final CommandXboxController m_driverController =
-      new CommandXboxController(OperatorConstants.kDriverControllerPort);
+    public boolean isRed = false;
+    private static RobotContainer container = null;
+    public static RobotContainer getInstance() {
+        return container;
+    }
 
-  /** The container for the robot. Contains subsystems, OI devices, and commands. */
-  public RobotContainer() {
-    // Configure the trigger bindings
-    configureBindings();
-  }
+    // Boolean flags
+    private boolean led_bool_enable = true;
+    private boolean led_bool_disable = true;
 
-  /**
-   * Use this method to define your trigger->command mappings. Triggers can be created via the
-   * {@link Trigger#Trigger(java.util.function.BooleanSupplier)} constructor with an arbitrary
-   * predicate, or via the named factories in {@link
-   * edu.wpi.first.wpilibj2.command.button.CommandGenericHID}'s subclasses for {@link
-   * CommandXboxController Xbox}/{@link edu.wpi.first.wpilibj2.command.button.CommandPS4Controller
-   * PS4} controllers or {@link edu.wpi.first.wpilibj2.command.button.CommandJoystick Flight
-   * joysticks}.
-   */
-  private void configureBindings() {
-    // Schedule `ExampleCommand` when `exampleCondition` changes to `true`
-    new Trigger(m_exampleSubsystem::exampleCondition)
-        .onTrue(new ExampleCommand(m_exampleSubsystem));
+    // Controllers
+    public final CommandXboxController driverController;
+    public final CommandXboxController operatorController;
 
-    // Schedule `exampleMethodCommand` when the Xbox controller's B button is pressed,
-    // cancelling on release.
-    m_driverController.b().whileTrue(m_exampleSubsystem.exampleMethodCommand());
-  }
+    // Subsystems
+    public final SwerveSubsystem swerveSubsystem;
+    public final CoralArmSubsystem coralArmSubsystem;
+    public final CoralIntakeSubsystem coralIntakeSubsystem;
+    public final LedSubsystem ledSubsystem;
+    public final AlgaeIntakeSubsystem algaeIntakeSubsystem;
+    public final AlgaeArmSubsystem algaeArmSubsystem;
+    public final VisionSubsystem vision;
 
-  /**
-   * Use this to pass the autonomous command to the main {@link Robot} class.
-   *
-   * @return the command to run in autonomous
-   */
-  public Command getAutonomousCommand() {
-    // An example command will be run in autonomous
-    return Autos.exampleAuto(m_exampleSubsystem);
-  }
+    // Commands
+    private LEDCommand led_command_green;
+    private LEDCommand led_command_blue;
+    private LEDCommand led_command_red;
+    private LEDCommand led_command_purple;
+    private LEDCommand led_command_cyan;
+    private LEDCommand led_command_yellow;
+    
+    private LEDAnimationCommand led_command_flash_blue;
+    private LEDAnimationCommand led_command_flash_white;
+    private LEDAnimationCommand led_command_flash_purple;
+    private LEDAnimationCommand led_command_flash_cyan;
+    
+    // Command Groups
+    private ParallelDeadlineGroup intakeAlgaeCommand;
+    private ParallelDeadlineGroup intakeCoralCommand;
+    private ParallelCommandGroup specialCoralIntakeCommand;
+
+    public RobotContainer() {
+        // Controllers
+        driverController = new CommandXboxController(Constants.OIConstants.kDriverControllerPort);
+        operatorController = new CommandXboxController(Constants.OIConstants.kOperatorControllerPort);
+
+        // Subsystems
+        swerveSubsystem = new SwerveSubsystem();
+        coralArmSubsystem = new CoralArmSubsystem();
+        ledSubsystem = new LedSubsystem();
+        algaeIntakeSubsystem = new AlgaeIntakeSubsystem();
+        coralIntakeSubsystem = new CoralIntakeSubsystem();
+        algaeArmSubsystem = new AlgaeArmSubsystem();
+        vision = new VisionSubsystem(swerveSubsystem.getOdometer(), swerveSubsystem::getVelocity);
+        configureButtonBindings();
+        SmartDashboard.putData("Robot", this);
+    }
+
+/*     private void configureCommands() {
+        // Commands
+        specialIntakeCoralCommand = new CoralIntakeCommand(CoralIntakeSubsystem, Constants.SystemValues.specialCoralIntakePower);
+        intakeAlgaeIntakeCommand = new AlgaeIntakeCommand(AlgaeIntakeSubsystem, Constants.SystemValues.intakeAlgaePower);
+        outTakeAlgaeIntakeCommand = new AlgaeIntakeCommand(AlgaeIntakeSubsystem, Constants.SystemValues.outputAlgaePower);
+        intakeCoralIntakeCommand = new CoralIntakeCommand(
+            CoralIntakeSubsystem, Constants.SystemValues.intakeCoralPower
+        );
+
+        outputAlgaeIntakeCommand = new AlgaeIntakeCommand(AlgaeIntakeSubsystem, Constants.SystemValues.outputAlgaePower);
+        outputCoralIntakeCommand = new CoralIntakeCommand(
+            CoralIntakeSubsystem, Constants.SystemValues.outputCoralPower
+        );
+        outputCoralIntakeCommand2 = new CoralIntakeCommand(
+            CoralIntakeSubsystem, -0.3
+        );
+
+        l3ArmCommand = new CoralArmCommand(CoralArmSubsystem, Constants.SystemValues.l3ArmAngle, true);
+        l2ArmCommand = new CoralArmCommand(CoralArmSubsystem, Constants.SystemValues.l2ArmAngle, true);
+        l0ArmCommand = new CoralArmCommand(CoralArmSubsystem, 0, true);
+
+        stopIntakeCoralIntakeCommand = new CoralIntakeCommand(
+            CoralIntakeSubsystem, 0
+        );
+
+        intakeCoralArmCommand = new CoralArmCommand(CoralArmSubsystem, Constants.SystemValues.intakeCoralArmAngle, true);
+        specialIntakeCoralArmCommand = new CoralArmCommand(CoralArmSubsystem, Constants.SystemValues.specialCoralIntakeArmAngle, true);
+        pickAlgaeArmCommand = new AlgaeArmCommand(AlgaeArmSubsystem, Constants.SystemValues.pickAlgaeArmAngle, true);
+        outputAlgaeArmCommand = new AlgaeArmCommand(AlgaeArmSubsystem, Constants.SystemValues.ouputAlgaeArmAngle, true);
+
+        led_command_green = new LEDCommand(led_subsys, new int[]{0, 200, 0});
+        led_command_blue = new LEDCommand(led_subsys, new int[]{0, 0, 200});
+        led_command_red = new LEDCommand(led_subsys, new int[]{200, 0, 0});
+        led_command_purple = new LEDCommand(led_subsys, new int[]{200, 0, 200});
+        led_command_cyan = new LEDCommand(led_subsys, new int[]{0, 200, 200});
+        led_command_yellow = new LEDCommand(led_subsys, new int[]{240, 240, 0});
+
+        led_command_flash_blue = new LEDAnimationCommand(led_subsys, new int[]{0, 0, 200}, new int[]{0, 0, 0}, 0.1);
+        led_command_flash_white = new LEDAnimationCommand(led_subsys, new int[]{200, 200, 200}, new int[]{0, 0, 0}, 0.1);
+        led_command_flash_purple = new LEDAnimationCommand(led_subsys, new int[]{200, 0, 200}, new int[]{0, 0, 0}, 0.1);
+        led_command_flash_cyan = new LEDAnimationCommand(led_subsys, new int[]{0, 200, 200}, new int[]{0, 0, 0}, 0.1);
+
+        // Default Commands
+        deafultAlgaeIntakeCommand = new AlgaeIntakeCommand(
+            AlgaeIntakeSubsystem, 0, true, operatorController
+        );
+        deafultCoralIntakeCommand = new CoralIntakeCommand(
+            CoralIntakeSubsystem, 0, true
+        );
+        defaultCoralArmCommand = new CoralArmCommand(
+            CoralArmSubsystem, 0, true
+        );
+        defaultAlgaeArmCommand = new AlgaeArmCommand(AlgaeArmSubsystem, 0, true);
+        swerveCommand = new SwerveDriveCommand(
+            swerveSubsystem, driverController
+        );
+        led_subsys.setDefaultCommand(led_command_yellow);
+
+        // Set Default Commands
+        swerveSubsystem.setDefaultCommand(swerveCommand);
+        // AlgaeArmSubsystem.setDefaultCommand(defaultAlgaeArmCommand);
+        CoralArmSubsystem.setDefaultCommand(defaultCoralArmCommand);
+        AlgaeIntakeSubsystem.setDefaultCommand(deafultAlgaeIntakeCommand);
+        CoralIntakeSubsystem.setDefaultCommand(deafultCoralIntakeCommand);
+
+        // Command Groups
+        intakeAlgaeCommand = new ParallelDeadlineGroup(
+            intakeAlgaeIntakeCommand, pickAlgaeArmCommand, led_command_flash_blue
+        );
+        intakeCoralCommand = new ParallelDeadlineGroup(
+            intakeCoralIntakeCommand, intakeCoralArmCommand, led_command_flash_purple
+        );
+        specialCoralIntakeCommand = new ParallelCommandGroup(
+            specialIntakeCoralCommand, specialIntakeCoralArmCommand, led_command_flash_white
+        );
+    }
+    */
+    private void configureButtonBindings() {
+        // Driver Controller
+        driverController.b().onTrue(swerveSubsystem.runOnce(swerveSubsystem::zeroHeading));
+        driverController.y().onTrue(swerveSubsystem.runOnce(swerveSubsystem::resetModulesAngle));
+        driverController.a().toggleOnTrue(swerveSubsystem.runOnce(swerveSubsystem::toggelSlow));
+        driverController.rightBumper().onTrue(new GoToL3Tag(false, swerveSubsystem, vision));
+        driverController.leftBumper().onTrue(new GoToL3Tag(true, swerveSubsystem, vision));
+        
+        // Operator Controller
+        operatorController.b().toggleOnTrue(algaeArmSubsystem.runOnce(algaeArmSubsystem::toggleIntake));
+        operatorController.a().toggleOnTrue(coralArmSubsystem.runOnce(coralArmSubsystem::toggleIntake));
+        operatorController.povLeft().toggleOnTrue(coralIntakeSubsystem.runOnce(()->coralIntakeSubsystem.mode = IntakeMode.STOP));
+        operatorController.rightBumper().toggleOnTrue(coralArmSubsystem.runOnce(coralArmSubsystem::toggleL3));
+        operatorController.leftBumper().toggleOnTrue(coralArmSubsystem.runOnce(coralArmSubsystem::toggleL2));
+        
+        operatorController.x().toggleOnTrue(coralIntakeSubsystem.runOnce(()->coralIntakeSubsystem.toggle(IntakeMode.OUTTAKE)));
+        operatorController.y().onTrue(algaeIntakeSubsystem.runOnce(()->algaeIntakeSubsystem.requiredPower =Constants.SystemValues.intakeAlgaePower));
+        operatorController.y().onFalse(algaeIntakeSubsystem.runOnce(()->algaeIntakeSubsystem.requiredPower = 0));
+        
+        // Driver
+        driverController.povDown().toggleOnTrue(specialCoralIntakeCommand); // single driver
+        driverController.povUp().whileTrue(new CoralIntakeCommand(CoralIntakeSubsystem, 0.2, true));
+        driverController.povRight().toggleOnTrue(l0ArmCommand);
+        
+        operatorController.povDown().toggleOnTrue(specialCoralIntakeCommand);
+        operatorController.povUp().toggleOnTrue(new CoralIntakeCommand(CoralIntakeSubsystem, 0.2, true));
+        operatorController.povRight().toggleOnTrue(l0ArmCommand);
+        operatorController.rightTrigger().toggleOnTrue(outputAlgiArmCommand);
+        operatorController.leftTrigger().toggleOnTrue(defaultAlgiArmCommand);
+    }
+    
+    public LEDCommand getYellowLEDCommand() {
+        return led_command_yellow;
+    }
+    
+    public LEDCommand getRedLEDCommand() {
+        return led_command_red;
+    }
+    
+    public AlgiArmSubsys getAlgiArmSubsys() {
+        return algiArmSubsystem;
+    }
+    
+    public Command getAutonomousCommand() {
+        return new L1U(swerveSubsystem).andThen(outputCoralIntakeCommand2);
+    }
+    
+    @Override
+    public void initSendable(SendableBuilder builder) {
+        // Implement if needed
+    }
 }
